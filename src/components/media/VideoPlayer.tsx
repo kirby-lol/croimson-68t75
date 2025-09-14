@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Settings, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Movie, TVShow, Episode, MediaType } from '../../types';
 import { videoServerService } from '../../services/videoServers';
 import { lastWatchedService } from '../../services/lastWatched';
@@ -34,7 +34,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [selectedServer, setSelectedServer] = useState('server_1');
   const [showControls, setShowControls] = useState(true);
   const [progress, setProgress] = useState(0);
+  const [startTime] = useState(Date.now());
   const progressIntervalRef = useRef<NodeJS.Timeout>();
+  const saveIntervalRef = useRef<NodeJS.Timeout>();
 
   const servers = videoServerService.getServers();
   const embedUrl = videoServerService.getEmbedUrl(
@@ -54,11 +56,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (isOpen) {
       // Start progress tracking
       progressIntervalRef.current = setInterval(() => {
-        setProgress(prev => prev + 1);
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setProgress(elapsed);
       }, 1000);
 
       // Save to last watched every 30 seconds
-      const saveInterval = setInterval(async () => {
+      saveIntervalRef.current = setInterval(async () => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        
+        // Only save if user has watched for at least 30 seconds
+        if (elapsed < 30) return;
+
         const lastWatchedItem = {
           item_type: mediaType,
           tmdb_id: item.id,
@@ -66,16 +74,20 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           server_id: selectedServer,
           season: mediaType === 'tv' ? selectedSeason : undefined,
           episode: mediaType === 'tv' ? selectedEpisode : undefined,
-          progress_seconds: progress,
+          progress_seconds: elapsed,
           runtime_seconds: runtime * 60,
           poster_path: item.poster_path,
           title,
         };
 
-        if (user) {
-          await lastWatchedService.saveUserLastWatched(user.id, lastWatchedItem);
-        } else {
-          await lastWatchedService.saveGuestLastWatched(lastWatchedItem);
+        try {
+          if (user) {
+            await lastWatchedService.saveUserLastWatched(user.id, lastWatchedItem);
+          } else {
+            await lastWatchedService.saveGuestLastWatched(lastWatchedItem);
+          }
+        } catch (error) {
+          console.error('Failed to save progress:', error);
         }
       }, 30000);
 
@@ -83,38 +95,55 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         if (progressIntervalRef.current) {
           clearInterval(progressIntervalRef.current);
         }
-        clearInterval(saveInterval);
+        if (saveIntervalRef.current) {
+          clearInterval(saveIntervalRef.current);
+        }
       };
     }
-  }, [isOpen, progress, user, selectedServer, mediaType, item, selectedSeason, selectedEpisode, runtime, title]);
+  }, [isOpen, startTime, user, selectedServer, mediaType, item, selectedSeason, selectedEpisode, runtime, title]);
 
   const handleClose = async () => {
-    // Save final progress before closing
-    const lastWatchedItem = {
-      item_type: mediaType,
-      tmdb_id: item.id,
-      imdb_id: 'imdb_id' in item ? item.imdb_id : undefined,
-      server_id: selectedServer,
-      season: mediaType === 'tv' ? selectedSeason : undefined,
-      episode: mediaType === 'tv' ? selectedEpisode : undefined,
-      progress_seconds: progress,
-      runtime_seconds: runtime * 60,
-      poster_path: item.poster_path,
-      title,
-    };
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    
+    // Save final progress before closing (only if watched for at least 30 seconds)
+    if (elapsed >= 30) {
+      const lastWatchedItem = {
+        item_type: mediaType,
+        tmdb_id: item.id,
+        imdb_id: 'imdb_id' in item ? item.imdb_id : undefined,
+        server_id: selectedServer,
+        season: mediaType === 'tv' ? selectedSeason : undefined,
+        episode: mediaType === 'tv' ? selectedEpisode : undefined,
+        progress_seconds: elapsed,
+        runtime_seconds: runtime * 60,
+        poster_path: item.poster_path,
+        title,
+      };
 
-    try {
-      if (user) {
-        await lastWatchedService.saveUserLastWatched(user.id, lastWatchedItem);
-      } else {
-        await lastWatchedService.saveGuestLastWatched(lastWatchedItem);
+      try {
+        if (user) {
+          await lastWatchedService.saveUserLastWatched(user.id, lastWatchedItem);
+        } else {
+          await lastWatchedService.saveGuestLastWatched(lastWatchedItem);
+        }
+      } catch (error) {
+        console.error('Failed to save final progress:', error);
       }
-    } catch (error) {
-      console.error('Failed to save progress:', error);
     }
 
     onClose();
   };
+
+  // Auto-hide controls
+  useEffect(() => {
+    if (!showControls) return;
+    
+    const timeout = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [showControls]);
 
   return (
     <AnimatePresence>
@@ -185,6 +214,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             onMouseLeave={() => setShowControls(false)}
           >
             <iframe
+              key={embedUrl} // Force re-render when URL changes
               src={embedUrl}
               className="w-full h-full relative z-[9997]"
               allowFullScreen
@@ -195,12 +225,16 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </div>
 
           {/* Progress Bar */}
-          <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800 z-[10000]">
+          <motion.div
+            initial={{ y: 100 }}
+            animate={{ y: showControls ? 0 : 100 }}
+            className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800 z-[10000]"
+          >
             <div
               className="h-full bg-red-600 transition-all duration-1000"
               style={{ width: `${Math.min((progress / (runtime * 60)) * 100, 100)}%` }}
             />
-          </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>

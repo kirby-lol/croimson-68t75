@@ -1,17 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { Movie, TVShow } from '../types';
 import { tmdbService } from '../services/tmdb';
 import { HeroCarousel } from '../components/media/HeroCarousel';
 import { MediaGrid } from '../components/media/MediaGrid';
 import { LastWatchedWidget } from '../components/media/LastWatchedWidget';
 
-interface HomePageProps {
-  onItemClick: (item: Movie | TVShow) => void;
-  onPlayClick: (item: Movie | TVShow) => void;
-}
-
-export const HomePage: React.FC<HomePageProps> = ({ onItemClick, onPlayClick }) => {
+export const HomePage: React.FC = () => {
+  const navigate = useNavigate();
   const [trendingMovies, setTrendingMovies] = useState<Movie[]>([]);
   const [popularMovies, setPopularMovies] = useState<Movie[]>([]);
   const [popularTVShows, setPopularTVShows] = useState<TVShow[]>([]);
@@ -39,20 +36,38 @@ export const HomePage: React.FC<HomePageProps> = ({ onItemClick, onPlayClick }) 
     loadData();
   }, []);
 
-  const handleResumeClick = (item: any) => {
-    // Convert LastWatched back to Movie/TVShow and trigger play
-    const mediaItem = {
-      id: item.tmdb_id,
-      [item.item_type === 'movie' ? 'title' : 'name']: item.title,
-      poster_path: item.poster_path,
-      // Add other required fields with defaults
-      overview: '',
-      backdrop_path: null,
-      vote_average: 0,
-      [item.item_type === 'movie' ? 'release_date' : 'first_air_date']: '',
-    } as Movie | TVShow;
+  const createSlug = (title: string) => {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .trim();
+  };
 
-    onPlayClick(mediaItem);
+  const handleItemClick = (item: Movie | TVShow) => {
+    const isMovie = 'title' in item;
+    const title = isMovie ? item.title : item.name;
+    const slug = createSlug(title);
+    
+    if (isMovie) {
+      navigate(`/movie/${item.id}/${slug}`);
+    } else {
+      navigate(`/tv/${item.id}/${slug}`);
+    }
+  };
+
+  const handlePlayClick = (item: Movie | TVShow) => {
+    handleItemClick(item); // Navigate to the item page which will auto-play
+  };
+
+  const handleResumeClick = (item: any) => {
+    const slug = createSlug(item.title);
+    if (item.item_type === 'movie') {
+      navigate(`/movie/${item.tmdb_id}/${slug}?autoplay=true`);
+    } else {
+      navigate(`/tv/${item.tmdb_id}/${slug}?autoplay=true&season=${item.season}&episode=${item.episode}`);
+    }
   };
 
   return (
@@ -65,8 +80,8 @@ export const HomePage: React.FC<HomePageProps> = ({ onItemClick, onPlayClick }) 
       {trendingMovies.length > 0 && (
         <HeroCarousel
           movies={trendingMovies.slice(0, 5)}
-          onPlayClick={onPlayClick}
-          onInfoClick={onItemClick}
+          onPlayClick={handlePlayClick}
+          onInfoClick={handleItemClick}
         />
       )}
 
@@ -79,7 +94,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onItemClick, onPlayClick }) 
           <h2 className="text-2xl font-bold text-white mb-6">Popular Movies</h2>
           <MediaGrid
             items={popularMovies}
-            onItemClick={onItemClick}
+            onItemClick={handleItemClick}
             loading={loading}
           />
         </section>
@@ -89,7 +104,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onItemClick, onPlayClick }) 
           <h2 className="text-2xl font-bold text-white mb-6">Popular TV Shows</h2>
           <MediaGrid
             items={popularTVShows}
-            onItemClick={onItemClick}
+            onItemClick={handleItemClick}
             loading={loading}
           />
         </section>

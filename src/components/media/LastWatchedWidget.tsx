@@ -5,7 +5,6 @@ import { LastWatched } from '../../types';
 import { lastWatchedService } from '../../services/lastWatched';
 import { useAuth } from '../../contexts/AuthContext';
 import { tmdbService } from '../../services/tmdb';
-import { Button } from '../ui/Button';
 
 interface LastWatchedWidgetProps {
   onResumeClick: (item: LastWatched) => void;
@@ -37,9 +36,12 @@ export const LastWatchedWidget: React.FC<LastWatchedWidgetProps> = ({
   }, [user]);
 
   const handleRemove = async (item: LastWatched) => {
-    // For simplicity, just remove from local state
-    // In a real app, you'd want to call a delete API
-    setLastWatched(prev => prev.filter(w => w.id !== item.id));
+    try {
+      await lastWatchedService.removeItem(user?.id || null, item.id || '');
+      setLastWatched(prev => prev.filter(w => w.id !== item.id));
+    } catch (error) {
+      console.error('Failed to remove item:', error);
+    }
   };
 
   const formatProgress = (item: LastWatched) => {
@@ -112,7 +114,7 @@ export const LastWatchedWidget: React.FC<LastWatchedWidgetProps> = ({
                 <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-800 bg-opacity-75 rounded-b-lg">
                   <div
                     className="h-full bg-red-600 rounded-b-lg transition-all duration-300"
-                    style={{ width: `${percentage}%` }}
+                    style={{ width: `${Math.max(percentage, 2)}%` }}
                   />
                 </div>
 

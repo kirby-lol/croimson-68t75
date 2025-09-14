@@ -1,16 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { Movie, TVShow } from '../types';
 import { tmdbService } from '../services/tmdb';
 import { MediaGrid } from '../components/media/MediaGrid';
 
-interface SearchPageProps {
-  query: string;
-  onItemClick: (item: Movie | TVShow) => void;
-}
-
-export const SearchPage: React.FC<SearchPageProps> = ({ query, onItemClick }) => {
+export const SearchPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const query = searchParams.get('q') || '';
   const [results, setResults] = useState<(Movie | TVShow)[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -33,9 +32,29 @@ export const SearchPage: React.FC<SearchPageProps> = ({ query, onItemClick }) =>
       }
     };
 
-    const debounceTimeout = setTimeout(searchMedia, 500);
-    return () => clearTimeout(debounceTimeout);
+    searchMedia();
   }, [query]);
+
+  const createSlug = (title: string) => {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .trim();
+  };
+
+  const handleItemClick = (item: Movie | TVShow) => {
+    const isMovie = 'title' in item;
+    const title = isMovie ? item.title : item.name;
+    const slug = createSlug(title);
+    
+    if (isMovie) {
+      navigate(`/movie/${item.id}/${slug}`);
+    } else {
+      navigate(`/tv/${item.id}/${slug}`);
+    }
+  };
 
   if (!query.trim()) {
     return (
@@ -66,9 +85,9 @@ export const SearchPage: React.FC<SearchPageProps> = ({ query, onItemClick }) =>
         </div>
 
         {loading ? (
-          <MediaGrid items={[]} onItemClick={onItemClick} loading={true} />
+          <MediaGrid items={[]} onItemClick={handleItemClick} loading={true} />
         ) : results.length > 0 ? (
-          <MediaGrid items={results} onItemClick={onItemClick} />
+          <MediaGrid items={results} onItemClick={handleItemClick} />
         ) : (
           <div className="text-center py-12">
             <Search size={48} className="text-gray-600 mx-auto mb-4" />
